@@ -1,277 +1,177 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Spotlight Workshop World Map</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Spotlight World Map</title>
 
-  <!-- Leaflet CSS -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    crossorigin=""
-  />
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 
-  <style>
-    :root{
-      --accent:#2b6ef6;
-      --muted:#6b7280;
-      --panel: rgba(255,255,255,0.95);
-      --shadow: 0 6px 18px rgba(11,14,22,0.25);
-      --radius:10px;
-    }
-    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
-    #map{height:100vh;width:100vw}
-    /* marker dot style */
-    .dot { stroke: white; stroke-width:1.2; fill: var(--accent); fill-opacity: 1; }
-    /* draggable icon */
-    .draggable-icon{ width:18px; height:18px; border-radius:50%;
-      background: var(--accent); box-shadow: 0 0 0 2px white inset, 0 0 10px rgba(43,110,246,.25);
-      transform: translate(-9px,-9px);
-    }
-    /* bottom-right toolbar */
-    .toolbar {
-      position: fixed; right: 16px; bottom: 16px; display:flex; flex-direction: column; gap:10px;
-      z-index: 9999;
-    }
-    .tool-btn {
-      width:44px; height:44px; border-radius:12px; display:inline-grid; place-items:center;
-      background: var(--panel); box-shadow: var(--shadow); cursor:pointer; border: 1px solid rgba(0,0,0,0.06);
-    }
-    .tool-btn:active{ transform: translateY(1px); }
-    .tool-btn svg{ width:20px; height:20px; }
-    .tool-small { width:38px; height:38px; border-radius:10px; }
-    /* toast */
-    .toast { position: fixed; left:50%; transform:translateX(-50%); bottom:86px; background:var(--panel); padding:8px 12px; border-radius:8px; box-shadow:var(--shadow); color:#0b1220; font-size:13px; z-index:9999; opacity:0; transition:opacity .18s ease; }
-    .toast.show{ opacity:1; }
-    /* minimal tooltip style for draggable marker */
-    .leaflet-tooltip.tip { background: white; color: #0b1220; border-radius:8px; border: 1px solid rgba(0,0,0,0.06); padding:6px 8px; box-shadow: var(--shadow); }
-    /* attribution tweak (light map) */
-    .leaflet-control-attribution { font-size:11px; opacity:0.85; }
-  </style>
+<style>
+:root{
+  --green:#28a745;
+  --blue:#1d4ed8;
+  --panel: rgba(255,255,255,0.95);
+  --shadow: 0 6px 18px rgba(11,14,22,0.25);
+  --radius:10px;
+}
+html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+#map{position:absolute; top:60px; bottom:0; left:0; right:0;}
+header{
+  position:fixed; top:0; left:0; right:0; height:60px;
+  background:#fff; display:flex; align-items:center; justify-content:space-between;
+  padding:0 16px; box-shadow:var(--shadow); z-index:999;
+}
+header h1{margin:0; font-size:20px; font-weight:bold; color:var(--green);}
+.burger{cursor:pointer; font-size:24px;}
+.menu{position:absolute; top:60px; right:16px; background:var(--panel); box-shadow:var(--shadow); border-radius:10px; display:none; flex-direction:column;}
+.menu button{margin:8px; padding:6px 12px; border:none; border-radius:6px; background:#f3f3f3; cursor:pointer;}
+.menu button:hover{background:#e0e0e0;}
+.floating-pin{position:fixed; top:100px; right:16px; width:44px; height:44px; border-radius:12px; background:var(--green); cursor:grab; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow); z-index:999;}
+.floating-pin:active{cursor:grabbing;}
+.floating-pin span{position:absolute; top:50px; left:-140px; width:180px; font-size:14px; background:var(--panel); padding:6px 8px; border-radius:8px; box-shadow:var(--shadow);}
+</style>
 </head>
 <body>
-  <div id="map" aria-label="World map"></div>
-
-  <!-- toolbar -->
-  <div class="toolbar" aria-hidden="false">
-    <div id="exportBtn" class="tool-btn" title="Export pins (spotlight-pins.json)">
-      <!-- save icon -->
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M5 4h14v6h-3V6H8v12h6v2H5V4z" fill="#111827" opacity="0.9"/>
-        <path d="M12 12v-6" stroke="#ffffff" stroke-width="0" />
-      </svg>
-    </div>
-
-    <div id="resetBtn" class="tool-btn" title="Reset all pins">
-      <!-- refresh/trash icon -->
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M6 6h12l-1 14H7L6 6z" fill="#111827" opacity="0.9"/>
-      </svg>
-    </div>
+<header>
+  <h1>Spotlight World Map</h1>
+  <div class="burger" id="burger">&#9776;</div>
+  <div class="menu" id="menu">
+    <button id="exportBtn">Export JSON</button>
+    <button id="resetBtn">Reset World Map</button>
   </div>
+</header>
 
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div id="map"></div>
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<div class="floating-pin" id="floatingPin">
+  <span>Zoom around the map to your location and drop this pin there</span>
+</div>
 
-  <script>
-    // STORAGE KEY & export filename
-    const STORAGE_KEY = 'spotlight:pin:v1';
-    const EXPORT_FILENAME = 'spotlight-pins.json';
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
-    // Map setup (CartoDB Positron — light)
-    const map = L.map('map', { minZoom: 2, maxZoom: 19, zoomControl: true }).setView([20, 0], 2);
-    const tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://carto.com/">Carto</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19
-    }).addTo(map);
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/11.26.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.26.0/firebase-database.js"></script>
 
-    // state
-    let committedPin = null; // {lat,lng,t}
-    let committedMarker = null;
-    let draggableMarker = null;
+<script>
+  // --- Firebase setup ---
+  const firebaseConfig = {
+    apiKey: "AIzaSyAGOOMadCVEklcCl_nCGQ4JCh_LFmycMb4",
+    authDomain: "spotlight-world-map.firebaseapp.com",
+    databaseURL: "https://spotlight-world-map-default-rtdb.europe-west1.firebasedatabase.app/",
+    projectId: "spotlight-world-map",
+    storageBucket: "spotlight-world-map.firebasestorage.app",
+    messagingSenderId: "498446317607",
+    appId: "1:498446317607:web:d940455fc2a5597f1bb602"
+  };
+  const app = firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
 
-    // helpers
-    const toastEl = document.getElementById('toast');
-    let toastTimer = null;
-    function toast(msg, ms = 1600) {
-      clearTimeout(toastTimer);
-      toastEl.textContent = msg;
-      toastEl.classList.add('show');
-      toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
+  // Generate unique ID per browser session
+  const browserId = 'b-' + Math.random().toString(36).substr(2,9);
+
+  // --- Map setup ---
+  const map = L.map('map', {minZoom:2, maxZoom:19}).setView([20,0],2);
+  const tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; <a href="https://carto.com/">Carto</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom:19
+  }).addTo(map);
+
+  let userMarker = null;
+  const otherMarkers = {};
+
+  // --- Floating pin drag/drop ---
+  const floating = document.getElementById('floatingPin');
+  let dragging=false;
+  let tempMarker=null;
+
+  floating.addEventListener('mousedown', (e)=>{
+    dragging=true;
+    const offsetX=e.offsetX, offsetY=e.offsetY;
+
+    function move(e){
+      floating.style.left=(e.clientX-offsetX)+'px';
+      floating.style.top=(e.clientY-offsetY)+'px';
     }
+    function up(e){
+      document.removeEventListener('mousemove',move);
+      document.removeEventListener('mouseup',up);
+      dragging=false;
 
-    function loadPin() {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return null;
-        return JSON.parse(raw);
-      } catch { return null; }
-    }
-    function savePin(pin) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(pin));
-    }
-    function clearPinStorage() {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-
-    // render committed pin (non-draggable)
-    function renderCommitted(pin, opts = {}) {
-      if (committedMarker) {
-        map.removeLayer(committedMarker);
-        committedMarker = null;
+      // convert position to map lat/lng
+      const rect = map.getContainer().getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      if(x>=0 && y>=0 && x<=rect.width && y<=rect.height){
+        const latlng = map.containerPointToLatLng([x,y]);
+        dropPin(latlng);
       }
-      if (!pin) return;
-      committedMarker = L.circleMarker([pin.lat, pin.lng], { radius:6, className:'dot' }).addTo(map);
-      if (opts.animate) rippleAt([pin.lat, pin.lng]);
+      // reset floating pin position
+      floating.style.top='100px';
+      floating.style.right='16px';
     }
 
-    // ripple effect
-    function rippleAt(latlng) {
-      const pt = map.latLngToContainerPoint(latlng);
-      const el = document.createElement('div');
-      el.style.position = 'absolute';
-      el.style.left = pt.x + 'px';
-      el.style.top = pt.y + 'px';
-      el.style.width = '14px';
-      el.style.height = '14px';
-      el.style.borderRadius = '50%';
-      el.style.transform = 'translate(-50%,-50%)';
-      el.style.pointerEvents = 'none';
-      el.style.background = 'radial-gradient(circle, rgba(43,110,246,0.7) 0%, rgba(43,110,246,0) 70%)';
-      el.style.animation = 'pop 600ms ease-out forwards';
-      document.body.appendChild(el);
-      setTimeout(()=>el.remove(),700);
+    document.addEventListener('mousemove',move);
+    document.addEventListener('mouseup',up);
+  });
+
+  function dropPin(latlng){
+    if(userMarker){
+      map.removeLayer(userMarker);
     }
-
-    // create draggable marker at latlng
-    function createDraggableAt(latlng) {
-      if (draggableMarker) return;
-      const icon = L.divIcon({ className:'', html: '<div class="draggable-icon"></div>', iconSize:[18,18] });
-      draggableMarker = L.marker(latlng, { draggable:true, icon }).addTo(map);
-      draggableMarker.bindTooltip("Drag to position — double-click to drop", { permanent: true, direction: 'top', className: 'tip' }).openTooltip();
-
-      // commit on double-click
-      draggableMarker.on('dblclick', () => {
-        const pos = draggableMarker.getLatLng();
-        commitPin(pos.lat, pos.lng);
-      });
-
-      // small accessibility: Enter while selected commits
-      draggableMarker.on('keypress', (e) => {
-        if (e.originalEvent && (e.originalEvent.key === 'Enter')) {
-          const pos = draggableMarker.getLatLng();
-          commitPin(pos.lat, pos.lng);
-        }
-      });
-
-      toast('Pin active — double-click it to commit.');
-    }
-
-    function removeDraggable() {
-      if (!draggableMarker) return;
-      map.removeLayer(draggableMarker);
-      draggableMarker = null;
-    }
-
-    function commitPin(lat, lng) {
-      if (committedPin) {
-        toast('You already have a committed pin. Reset to add another.');
-        removeDraggable();
-        return;
-      }
-      const pin = { lat: Number(lat), lng: Number(lng), t: Date.now() };
-      committedPin = pin;
-      savePin(pin);
-      renderCommitted(pin, { animate:true });
-      removeDraggable();
-      toast('Thanks — your pin has been saved.');
-    }
-
-    // map click spawns draggable if none committed and none active
-    map.on('click', (e) => {
-      if (committedPin) {
-        toast('Pin already saved for this browser. Reset to add a new one.');
-        return;
-      }
-      if (draggableMarker) {
-        toast('Drag the active pin, or double-click it to commit.');
-        return;
-      }
-      createDraggableAt(e.latlng);
+    userMarker=L.marker(latlng,{draggable:true,icon:L.divIcon({className:'',html:'<div style="width:18px;height:18px;border-radius:50%;background:'+getUserPinColor()+';"></div>',iconSize:[18,18]})}).addTo(map);
+    // push to Firebase
+    const pinRef = db.ref('pins/'+browserId);
+    pinRef.set({lat:latlng.lat,lng:latlng.lng,t:Date.now()});
+    userMarker.on('dragend', e=>{
+      const pos=e.target.getLatLng();
+      pinRef.set({lat:pos.lat,lng:pos.lng,t:Date.now()});
     });
+  }
 
-    // load on start
-    (function initFromStorage(){
-      const pin = loadPin();
-      if (pin) {
-        committedPin = pin;
-        renderCommitted(pin, { animate:false });
-      }
-    })();
+  function getUserPinColor(){return '--green' in document.documentElement.style ? 'green':'#28a745';}
 
-    // export functionality
-    document.getElementById('exportBtn').addEventListener('click', () => {
-      // export the committed pin if present, otherwise empty array
-      const arr = committedPin ? [committedPin] : [];
-      const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
+  // --- Listen for pins ---
+  db.ref('pins').on('value', snapshot=>{
+    const data = snapshot.val()||{};
+    // remove all other markers
+    for(const k in otherMarkers){
+      map.removeLayer(otherMarkers[k]);
+    }
+    for(const key in data){
+      if(key===browserId) continue;
+      const p = data[key];
+      const m = L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',html:'<div style="width:18px;height:18px;border-radius:50%;background:blue;"></div>',iconSize:[18,18]})}).addTo(map);
+      otherMarkers[key]=m;
+    }
+  });
+
+  // --- Header burger menu ---
+  const burger = document.getElementById('burger');
+  const menu = document.getElementById('menu');
+  burger.addEventListener('click',()=>{menu.style.display = menu.style.display==='flex'?'none':'flex';});
+
+  document.getElementById('exportBtn').addEventListener('click', ()=>{
+    db.ref('pins').once('value').then(snap=>{
+      const data = snap.val()||{};
+      const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = EXPORT_FILENAME;
-      a.click();
+      const a=document.createElement('a');
+      a.href=url; a.download='spotlight-pins.json'; a.click();
       URL.revokeObjectURL(url);
-      toast('Export downloaded');
     });
+  });
 
-    // reset functionality (clears local storage and UI)
-    document.getElementById('resetBtn').addEventListener('click', () => {
-      const ok = confirm('Clear the saved pin from this browser?');
-      if (!ok) return;
-      clearPinStorage();
-      committedPin = null;
-      if (committedMarker) { map.removeLayer(committedMarker); committedMarker = null; }
-      removeDraggable();
-      toast('Cleared');
-    });
-
-    // keyboard shortcuts: N to spawn, Enter to commit active, Backspace to reset
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'n' || e.key === 'N') {
-        if (committedPin) { toast('Reset to add another.'); return; }
-        if (!draggableMarker) createDraggableAt(map.getCenter());
-      }
-      if (e.key === 'Enter') {
-        if (draggableMarker) {
-          const pos = draggableMarker.getLatLng();
-          commitPin(pos.lat, pos.lng);
-        }
-      }
-      if (e.key === 'Backspace') {
-        e.preventDefault();
-        clearPinStorage();
-        committedPin = null;
-        if (committedMarker) { map.removeLayer(committedMarker); committedMarker = null; }
-        removeDraggable();
-        toast('Cleared');
-      }
-    });
-
-    // small CSS keyframes for ripple
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes pop {
-        0% { opacity: 0; transform: translate(-50%,-50%) scale(0.4); }
-        40% { opacity: 1; }
-        100% { opacity: 0; transform: translate(-50%,-50%) scale(3.5); }
-      }
-    `;
-    document.head.appendChild(style);
-
-    // accessibility: allow focusing map for keyboard spawn
-    map.getContainer().tabIndex = 0;
-  </script>
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    if(confirm('Delete all pins from the map?')){
+      db.ref('pins').remove();
+      if(userMarker) map.removeLayer(userMarker);
+      for(const k in otherMarkers) map.removeLayer(otherMarkers[k]);
+    }
+  });
+</script>
 </body>
 </html>
