@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Spotlight Workshop World Map</title>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
+
+  <style>
+    :root{
+      --accent:#2b6ef6;
+      --muted:#6b7280;
+      --panel: rgba(255,255,255,0.95);
+      --shadow: 0 6px 18px rgba(11,14,22,0.25);
+      --radius:10px;
+    }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    #map{height:100vh;width:100vw}
+    /* marker dot style */
+    .dot { stroke: white; stroke-width:1.2; fill: var(--accent); fill-opacity: 1; }
+    /* draggable icon */
+    .draggable-icon{ width:18px; height:18px; border-radius:50%;
+      background: var(--accent); box-shadow: 0 0 0 2px white inset, 0 0 10px rgba(43,110,246,.25);
+      transform: translate(-9px,-9px);
+    }
+    /* bottom-right toolbar */
+    .toolbar {
+      position: fixed; right: 16px; bottom: 16px; display:flex; flex-direction: column; gap:10px;
+      z-index: 9999;
+    }
+    .tool-btn {
+      width:44px; height:44px; border-radius:12px; display:inline-grid; place-items:center;
+      background: var(--panel); box-shadow: var(--shadow); cursor:pointer; border: 1px solid rgba(0,0,0,0.06);
+    }
+    .tool-btn:active{ transform: translateY(1px); }
+    .tool-btn svg{ width:20px; height:20px; }
+    .tool-small { width:38px; height:38px; border-radius:10px; }
+    /* toast */
+    .toast { position: fixed; left:50%; transform:translateX(-50%); bottom:86px; background:var(--panel); padding:8px 12px; border-radius:8px; box-shadow:var(--shadow); color:#0b1220; font-size:13px; z-index:9999; opacity:0; transition:opacity .18s ease; }
+    .toast.show{ opacity:1; }
+    /* minimal tooltip style for draggable marker */
+    .leaflet-tooltip.tip { background: white; color: #0b1220; border-radius:8px; border: 1px solid rgba(0,0,0,0.06); padding:6px 8px; box-shadow: var(--shadow); }
+    /* attribution tweak (light map) */
+    .leaflet-control-attribution { font-size:11px; opacity:0.85; }
+  </style>
+</head>
+<body>
+  <div id="map" aria-label="World map"></div>
+
+  <!-- toolbar -->
+  <div class="toolbar" aria-hidden="false">
+    <div id="exportBtn" class="tool-btn" title="Export pins (spotlight-pins.json)">
+      <!-- save icon -->
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M5 4h14v6h-3V6H8v12h6v2H5V4z" fill="#111827" opacity="0.9"/>
+        <path d="M12 12v-6" stroke="#ffffff" stroke-width="0" />
+      </svg>
+    </div>
+
+    <div id="resetBtn" class="tool-btn" title="Reset all pins">
+      <!-- refresh/trash icon -->
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M6 6h12l-1 14H7L6 6z" fill="#111827" opacity="0.9"/>
+      </svg>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <script>
+    // STORAGE KEY & export filename
+    const STORAGE_KEY = 'spotlight:pin:v1';
+    const EXPORT_FILENAME = 'spotlight-pins.json';
+
+    // Map setup (CartoDB Positron — light)
+    const map = L.map('map', { minZoom: 2, maxZoom: 19, zoomControl: true }).setView([20, 0], 2);
+    const tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://carto.com/">Carto</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(map);
+
+    // state
+    let committedPin = null; // {lat,lng,t}
+    let committedMarker = null;
+    let draggableMarker = null;
+
+    // helpers
+    const toastEl = document.getElementById('toast');
+    let toastTimer = null;
+    function toast(msg, ms = 1600) {
+      clearTimeout(toastTimer);
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
+    }
+
+    function loadPin() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch { return null; }
+    }
+    function savePin(pin) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pin));
+    }
+    function clearPinStorage() {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+
+    // render committed pin (non-draggable)
+    function renderCommitted(pin, opts = {}) {
+      if (committedMarker) {
+        map.removeLayer(committedMarker);
+        committedMarker = null;
+      }
+      if (!pin) return;
+      committedMarker = L.circleMarker([pin.lat, pin.lng], { radius:6, className:'dot' }).addTo(map);
+      if (opts.animate) rippleAt([pin.lat, pin.lng]);
+    }
+
+    // ripple effect
+    function rippleAt(latlng) {
+      const pt = map.latLngToContainerPoint(latlng);
+      const el = document.createElement('div');
+      el.style.position = 'absolute';
+      el.style.left = pt.x + 'px';
+      el.style.top = pt.y + 'px';
+      el.style.width = '14px';
+      el.style.height = '14px';
+      el.style.borderRadius = '50%';
+      el.style.transform = 'translate(-50%,-50%)';
+      el.style.pointerEvents = 'none';
+      el.style.background = 'radial-gradient(circle, rgba(43,110,246,0.7) 0%, rgba(43,110,246,0) 70%)';
+      el.style.animation = 'pop 600ms ease-out forwards';
+      document.body.appendChild(el);
+      setTimeout(()=>el.remove(),700);
+    }
+
+    // create draggable marker at latlng
+    function createDraggableAt(latlng) {
+      if (draggableMarker) return;
+      const icon = L.divIcon({ className:'', html: '<div class="draggable-icon"></div>', iconSize:[18,18] });
+      draggableMarker = L.marker(latlng, { draggable:true, icon }).addTo(map);
+      draggableMarker.bindTooltip("Drag to position — double-click to drop", { permanent: true, direction: 'top', className: 'tip' }).openTooltip();
+
+      // commit on double-click
+      draggableMarker.on('dblclick', () => {
+        const pos = draggableMarker.getLatLng();
+        commitPin(pos.lat, pos.lng);
+      });
+
+      // small accessibility: Enter while selected commits
+      draggableMarker.on('keypress', (e) => {
+        if (e.originalEvent && (e.originalEvent.key === 'Enter')) {
+          const pos = draggableMarker.getLatLng();
+          commitPin(pos.lat, pos.lng);
+        }
+      });
+
+      toast('Pin active — double-click it to commit.');
+    }
+
+    function removeDraggable() {
+      if (!draggableMarker) return;
+      map.removeLayer(draggableMarker);
+      draggableMarker = null;
+    }
+
+    function commitPin(lat, lng) {
+      if (committedPin) {
+        toast('You already have a committed pin. Reset to add another.');
+        removeDraggable();
+        return;
+      }
+      const pin = { lat: Number(lat), lng: Number(lng), t: Date.now() };
+      committedPin = pin;
+      savePin(pin);
+      renderCommitted(pin, { animate:true });
+      removeDraggable();
+      toast('Thanks — your pin has been saved.');
+    }
+
+    // map click spawns draggable if none committed and none active
+    map.on('click', (e) => {
+      if (committedPin) {
+        toast('Pin already saved for this browser. Reset to add a new one.');
+        return;
+      }
+      if (draggableMarker) {
+        toast('Drag the active pin, or double-click it to commit.');
+        return;
+      }
+      createDraggableAt(e.latlng);
+    });
+
+    // load on start
+    (function initFromStorage(){
+      const pin = loadPin();
+      if (pin) {
+        committedPin = pin;
+        renderCommitted(pin, { animate:false });
+      }
+    })();
+
+    // export functionality
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      // export the committed pin if present, otherwise empty array
+      const arr = committedPin ? [committedPin] : [];
+      const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = EXPORT_FILENAME;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Export downloaded');
+    });
+
+    // reset functionality (clears local storage and UI)
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      const ok = confirm('Clear the saved pin from this browser?');
+      if (!ok) return;
+      clearPinStorage();
+      committedPin = null;
+      if (committedMarker) { map.removeLayer(committedMarker); committedMarker = null; }
+      removeDraggable();
+      toast('Cleared');
+    });
+
+    // keyboard shortcuts: N to spawn, Enter to commit active, Backspace to reset
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'n' || e.key === 'N') {
+        if (committedPin) { toast('Reset to add another.'); return; }
+        if (!draggableMarker) createDraggableAt(map.getCenter());
+      }
+      if (e.key === 'Enter') {
+        if (draggableMarker) {
+          const pos = draggableMarker.getLatLng();
+          commitPin(pos.lat, pos.lng);
+        }
+      }
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        clearPinStorage();
+        committedPin = null;
+        if (committedMarker) { map.removeLayer(committedMarker); committedMarker = null; }
+        removeDraggable();
+        toast('Cleared');
+      }
+    });
+
+    // small CSS keyframes for ripple
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes pop {
+        0% { opacity: 0; transform: translate(-50%,-50%) scale(0.4); }
+        40% { opacity: 1; }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(3.5); }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // accessibility: allow focusing map for keyboard spawn
+    map.getContainer().tabIndex = 0;
+  </script>
+</body>
+</html>
