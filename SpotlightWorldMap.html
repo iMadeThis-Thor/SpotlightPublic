@@ -17,7 +17,7 @@
   --radius:10px;
 }
 html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
-#map{position:absolute; top:60px; bottom:0; left:0; right:0;}
+#map{position:absolute; top:60px; bottom:0; left:0; right:0; z-index:1;}
 header{
   position:fixed; top:0; left:0; right:0; height:60px;
   background:#fff; display:flex; align-items:center; justify-content:space-between;
@@ -25,12 +25,12 @@ header{
 }
 header h1{margin:0; font-size:20px; font-weight:bold; color:var(--green);}
 .burger{cursor:pointer; font-size:24px;}
-.menu{position:absolute; top:60px; right:16px; background:var(--panel); box-shadow:var(--shadow); border-radius:10px; display:none; flex-direction:column;}
+.menu{position:absolute; top:60px; right:16px; background:var(--panel); box-shadow:var(--shadow); border-radius:10px; display:none; flex-direction:column; z-index:1000;}
+.menu.show{display:flex;}
 .menu button{margin:8px; padding:6px 12px; border:none; border-radius:6px; background:#f3f3f3; cursor:pointer;}
 .menu button:hover{background:#e0e0e0;}
-.floating-pin{position:fixed; top:100px; right:16px; width:44px; height:44px; border-radius:12px; background:var(--green); cursor:grab; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow); z-index:999;}
-.floating-pin:active{cursor:grabbing;}
-.floating-pin span{position:absolute; top:50px; left:-140px; width:180px; font-size:14px; background:var(--panel); padding:6px 8px; border-radius:8px; box-shadow:var(--shadow);}
+.floating-pin{position:fixed; top:100px; right:16px; width:36px; height:36px; border-radius:50%; background:var(--green); cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow); z-index:999;}
+.floating-pin span{position:absolute; top:40px; left:-160px; width:200px; font-size:14px; background:var(--panel); padding:6px 8px; border-radius:8px; box-shadow:var(--shadow);}
 </style>
 </head>
 <body>
@@ -70,7 +70,6 @@ header h1{margin:0; font-size:20px; font-weight:bold; color:var(--green);}
   const app = firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  // Generate unique ID per browser session
   const browserId = 'b-' + Math.random().toString(36).substr(2,9);
 
   // --- Map setup ---
@@ -83,56 +82,23 @@ header h1{margin:0; font-size:20px; font-weight:bold; color:var(--green);}
   let userMarker = null;
   const otherMarkers = {};
 
-  // --- Floating pin drag/drop ---
+  // --- Floating pin click to spawn marker ---
   const floating = document.getElementById('floatingPin');
-  let dragging=false;
-  let tempMarker=null;
-
-  floating.addEventListener('mousedown', (e)=>{
-    dragging=true;
-    const offsetX=e.offsetX, offsetY=e.offsetY;
-
-    function move(e){
-      floating.style.left=(e.clientX-offsetX)+'px';
-      floating.style.top=(e.clientY-offsetY)+'px';
-    }
-    function up(e){
-      document.removeEventListener('mousemove',move);
-      document.removeEventListener('mouseup',up);
-      dragging=false;
-
-      // convert position to map lat/lng
-      const rect = map.getContainer().getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      if(x>=0 && y>=0 && x<=rect.width && y<=rect.height){
-        const latlng = map.containerPointToLatLng([x,y]);
-        dropPin(latlng);
-      }
-      // reset floating pin position
-      floating.style.top='100px';
-      floating.style.right='16px';
-    }
-
-    document.addEventListener('mousemove',move);
-    document.addEventListener('mouseup',up);
-  });
-
-  function dropPin(latlng){
-    if(userMarker){
-      map.removeLayer(userMarker);
-    }
-    userMarker=L.marker(latlng,{draggable:true,icon:L.divIcon({className:'',html:'<div style="width:18px;height:18px;border-radius:50%;background:'+getUserPinColor()+';"></div>',iconSize:[18,18]})}).addTo(map);
-    // push to Firebase
+  floating.addEventListener('click', ()=>{
+    if(userMarker) return; // only one per browser window
+    const center = map.getCenter();
+    userMarker = L.marker(center, {
+      draggable:true,
+      icon:L.divIcon({className:'',html:'<div style="width:14px;height:14px;border-radius:50%;background:green;"></div>',iconSize:[14,14]})
+    }).addTo(map);
     const pinRef = db.ref('pins/'+browserId);
-    pinRef.set({lat:latlng.lat,lng:latlng.lng,t:Date.now()});
+    pinRef.set({lat:center.lat,lng:center.lng,t:Date.now()});
+
     userMarker.on('dragend', e=>{
-      const pos=e.target.getLatLng();
+      const pos = e.target.getLatLng();
       pinRef.set({lat:pos.lat,lng:pos.lng,t:Date.now()});
     });
-  }
-
-  function getUserPinColor(){return '--green' in document.documentElement.style ? 'green':'#28a745';}
+  });
 
   // --- Listen for pins ---
   db.ref('pins').on('value', snapshot=>{
@@ -144,15 +110,15 @@ header h1{margin:0; font-size:20px; font-weight:bold; color:var(--green);}
     for(const key in data){
       if(key===browserId) continue;
       const p = data[key];
-      const m = L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',html:'<div style="width:18px;height:18px;border-radius:50%;background:blue;"></div>',iconSize:[18,18]})}).addTo(map);
+      const m = L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',html:'<div style="width:14px;height:14px;border-radius:50%;background:blue;"></div>',iconSize:[14,14]})}).addTo(map);
       otherMarkers[key]=m;
     }
   });
 
-  // --- Header burger menu ---
+  // --- Burger menu ---
   const burger = document.getElementById('burger');
   const menu = document.getElementById('menu');
-  burger.addEventListener('click',()=>{menu.style.display = menu.style.display==='flex'?'none':'flex';});
+  burger.addEventListener('click',()=> menu.classList.toggle('show'));
 
   document.getElementById('exportBtn').addEventListener('click', ()=>{
     db.ref('pins').once('value').then(snap=>{
